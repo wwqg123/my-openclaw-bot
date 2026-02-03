@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "18789:18789"
+    environment:
+      # You can set your API keys here or configure them via the web UI after deployment
+      # OPENCLAW_ANTHROPIC_API_KEY: "your_anthropic_api_key"
+      # OPENCLAW_OPENAI_API_KEY: "your_openai_api_key"
+      OPENCLAW_GATEWAY_TOKEN: "manus123" # This should match the token in Dockerfile
+    volumes:
+      # Persist OpenClaw data (config, memory, etc.)
+      - openclaw_data:/root/.openclaw
+
+volumes:
+  openclaw_data:
