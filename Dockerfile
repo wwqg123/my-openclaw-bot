@@ -1,19 +1,23 @@
 # --- 阶段 1: 构建阶段 ---
 FROM node:22-slim AS builder
 
-# 安装最小化的编译依赖
+# 关键：必须安装 git，否则无法下载 package.json 里的 git 依赖
 RUN apt-get update && apt-get install -y \
     python3 \
     build-essential \
     cmake \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# 复制依赖定义
 COPY package*.json ./
 
-# 使用 --no-audit 和 --no-fund 减少安装时的内存占用
-RUN npm install --omit=dev --no-audit --no-fund
+# 运行安装 (此时有了 git，应该可以成功了)
+RUN npm install --omit=dev --no-audit
 
+# 复制其余源码
 COPY . .
 
 # --- 阶段 2: 运行阶段 ---
@@ -21,16 +25,15 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# 只拷贝生产环境必需文件
+# 从构建阶段拷贝编译好的依赖和源码
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app ./
 
-# --- 1GB 内存环境的关键优化 ---
-# 将堆内存限制在 768MB，预留 250MB 给系统和 C++ 绑定，防止直接被系统杀掉
-ENV NODE_OPTIONS="--max-old-space-size=768 --is-node-main-instance"
+# 限制 1GB 内存环境下的 Node 堆大小
+ENV NODE_OPTIONS="--max-old-space-size=768"
 ENV NODE_ENV=production
 
 EXPOSE 18789
 
-# 直接调用二进制文件启动，跳过 npm，节省内存
+# 直接启动
 CMD ["node", "./node_modules/.bin/openclaw", "gateway", "--port", "18789", "--host", "0.0.0.0", "--allow-unconfigured"]
