@@ -1,9 +1,9 @@
 {
   "name": "my-openclaw-bot",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "scripts": {
-    "start": "openclaw gateway --port 18789 --allow-unconfigured --token ${OPENCLAW_GATEWAY_TOKEN:-manus123}"
+    "start": "openclaw gateway --port 18789 --host 0.0.0.0 --allow-unconfigured --token ${OPENCLAW_GATEWAY_TOKEN:-manus123}"
   },
   "dependencies": {
     "openclaw": "latest"
