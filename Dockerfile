@@ -1,18 +1,38 @@
-FROM node:22-alpine
+# --- 第一阶段：构建 (编译 node-llama-cpp) ---
+FROM node:20-slim AS builder
 
-RUN apk add --no-cache python3 make g++ git
+# 安装编译所需的系统工具
+RUN apt-get update && apt-get install -y \
+    python3 \
+    build-essential \
+    cmake \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-ENV OPENCLAW_GATEWAY_TOKEN=manus123
+# 复制依赖定义
+COPY package*.json ./
+
+# 安装依赖（这一步会进行本地编译，耗时较长）
+RUN npm install
+
+# 复制其余源码
+COPY . .
+
+# --- 第二阶段：运行 ---
+FROM node:20-slim
+
+WORKDIR /app
+
+# 从构建阶段只拷贝必要的文件
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app ./
+
+# OpenClaw 默认可能需要的环境变量映射
 ENV NODE_ENV=production
-ENV PORT=18789
 
-COPY package.json ./
+# 暴露端口（Zeabur 会自动通过环境变量分配端口，但声明一下是好习惯）
+EXPOSE 3000
 
-RUN npm install --omit=dev
-
-EXPOSE 18789
-
-# 关键修复：添加 --host 0.0.0.0 确保外部可访问
-CMD ["npx", "openclaw", "gateway", "--port", "18789", "--host", "0.0.0.0", "--allow-unconfigured", "--token", "manus123"]
+CMD ["npm", "start"]
