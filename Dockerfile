@@ -1,42 +1,36 @@
-# --- 阶段 1: 构建环境 (编译 node-llama-cpp) ---
+# --- 阶段 1: 构建阶段 ---
 FROM node:22-slim AS builder
 
-# 安装编译所需的系统工具
+# 安装最小化的编译依赖
 RUN apt-get update && apt-get install -y \
     python3 \
     build-essential \
     cmake \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# 复制依赖文件并安装
 COPY package*.json ./
-# 提示：如果 npm install 依然在构建阶段崩掉，说明 Zeabur 构建机内存不足
-RUN npm install
 
-# 复制源码
+# 使用 --no-audit 和 --no-fund 减少安装时的内存占用
+RUN npm install --omit=dev --no-audit --no-fund
+
 COPY . .
 
-# --- 阶段 2: 运行环境 ---
+# --- 阶段 2: 运行阶段 ---
 FROM node:22-slim
 
 WORKDIR /app
 
-# 从构建阶段只拷贝必要的文件，减少镜像层数和体积
+# 只拷贝生产环境必需文件
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app ./
 
-# --- 内存优化设置 ---
-# 告诉 Node.js 尽量利用容器内存，不要因为默认限制而过早崩溃
-# 如果你的 Zeabur 套餐内存是 1GB，请将下方的 2048 改为 800
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+# --- 1GB 内存环境的关键优化 ---
+# 将堆内存限制在 768MB，预留 250MB 给系统和 C++ 绑定，防止直接被系统杀掉
+ENV NODE_OPTIONS="--max-old-space-size=768 --is-node-main-instance"
 ENV NODE_ENV=production
 
-# 暴露 OpenClaw Gateway 端口
 EXPOSE 18789
 
-# 启动命令
-# 加上 --no-warnings 可以减少日志杂讯
-CMD ["npm", "start"]
+# 直接调用二进制文件启动，跳过 npm，节省内存
+CMD ["node", "./node_modules/.bin/openclaw", "gateway", "--port", "18789", "--host", "0.0.0.0", "--allow-unconfigured"]
