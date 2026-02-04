@@ -1,37 +1,50 @@
-# --- 阶段 1: 构建阶段 (改用全量版 Node 22，虽然大，但稳) ---
-FROM node:22 AS builder
+# --- 阶段 1: 构建阶段 ---
+# 使用 bullseye-slim 而不是 full 镜像，因为它更轻但比 slim 稍微多一点工具
+FROM node:22-bullseye-slim AS builder
 
-# 设置构建时的环境变量，防止交互式弹窗卡住构建
-ENV DEBIAN_FRONTEND=noninteractive
-
-WORKDIR /app
-
-# 1. 复制所有文件
-COPY . .
-
-# 2. 清理可能存在的缓存并安装 (全量镜像自带 git, python, g++)
-# 使用 --legacy-peer-deps 解决可能存在的依赖冲突
-RUN npm install --omit=dev --legacy-peer-deps --no-audit
-
-# --- 阶段 2: 运行阶段 (回归 slim 镜像，保持轻量) ---
-FROM node:22-slim
-
-# 运行阶段依然需要一些基础库来支撑 node-llama-cpp 的运行
+# 安装最小化编译工具
 RUN apt-get update && apt-get install -y \
-    libgomp1 \
+    python3 \
+    make \
+    g++ \
+    cmake \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 从构建阶段拷贝
+# 限制构建时的并行线程数，防止多核编译吃掉所有内存
+ENV MAKEFLAGS="-j1"
+ENV CMAKE_BUILD_PARALLEL_LEVEL=1
+
+COPY package*.json ./
+
+# 1. 禁用脚本运行，防止在安装时自动触发耗能的二进制构建
+# 2. 限制 npm 自身的内存
+RUN node --max-old-space-size=512 /usr/local/lib/node_modules/npm/bin/npm-cli.js install \
+    --omit=dev \
+    --no-audit \
+    --no-fund \
+    --legacy-peer-deps
+
+COPY . .
+
+# --- 阶段 2: 运行阶段 ---
+FROM node:22-bullseye-slim
+
+# 运行本地模型必须的库
+RUN apt-get update && apt-get install -y libgomp1 && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
 COPY --from=builder /app ./
 
-# --- 1GB 内存限制优化 ---
-# 严格限制堆空间，预留给 C++ 绑定
+# --- 运行时的 1GB 内存存活策略 ---
+# 预留 300MB 给系统内核和 C++ 扩展，Node 只拿 700MB
 ENV NODE_OPTIONS="--max-old-space-size=700"
 ENV NODE_ENV=production
 
 EXPOSE 18789
 
-# 启动
+# 启动命令
 CMD ["node", "./node_modules/.bin/openclaw", "gateway", "--port", "18789", "--host", "0.0.0.0", "--allow-unconfigured"]
